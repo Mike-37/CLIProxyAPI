@@ -78,6 +78,24 @@ type Config struct {
 
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
+
+	// Providers defines the unified provider configuration for the new architecture.
+	Providers ProvidersConfig `yaml:"providers" json:"providers"`
+
+	// Models defines model routing and capabilities configuration.
+	Models ModelsConfig `yaml:"models" json:"models"`
+
+	// Server defines additional server configuration.
+	Server ServerConfig `yaml:"server" json:"server"`
+
+	// Websocket defines WebSocket relay configuration.
+	Websocket WebsocketConfig `yaml:"websocket" json:"websocket"`
+
+	// Logging defines structured logging configuration.
+	Logging LoggingConfig `yaml:"logging" json:"logging"`
+
+	// Advanced defines advanced configuration options.
+	Advanced AdvancedConfig `yaml:"advanced" json:"advanced"`
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.
@@ -226,6 +244,337 @@ type OpenAICompatibilityModel struct {
 
 	// Alias is the model name alias that clients will use to reference this model.
 	Alias string `yaml:"alias" json:"alias"`
+}
+
+// ============================================
+// NEW UNIFIED ARCHITECTURE CONFIGURATION
+// ============================================
+
+// ServerConfig defines additional server configuration options.
+type ServerConfig struct {
+	// ReadTimeout is the maximum duration for reading the entire request.
+	ReadTimeout int `yaml:"read_timeout" json:"read_timeout"`
+
+	// WriteTimeout is the maximum duration before timing out writes of the response.
+	WriteTimeout int `yaml:"write_timeout" json:"write_timeout"`
+
+	// Host is the host interface to bind to (default: "0.0.0.0").
+	Host string `yaml:"host" json:"host"`
+}
+
+// WebsocketConfig defines WebSocket relay configuration.
+type WebsocketConfig struct {
+	// Enabled toggles WebSocket relay functionality.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Path is the WebSocket endpoint path (default: "/v1/ws").
+	Path string `yaml:"path" json:"path"`
+
+	// Timeout is the maximum duration for WebSocket connections in seconds.
+	Timeout int `yaml:"timeout" json:"timeout"`
+
+	// PingInterval is the interval for sending ping messages in seconds.
+	PingInterval int `yaml:"ping_interval" json:"ping_interval"`
+
+	// MaxMessageSize is the maximum message size in bytes.
+	MaxMessageSize int `yaml:"max_message_size" json:"max_message_size"`
+
+	// Auth toggles authentication for WebSocket connections.
+	Auth bool `yaml:"auth" json:"auth"`
+}
+
+// LoggingConfig defines structured logging configuration.
+type LoggingConfig struct {
+	// Level is the logging level: debug, info, warn, error.
+	Level string `yaml:"level" json:"level"`
+
+	// ToFile toggles writing logs to files instead of stdout.
+	ToFile bool `yaml:"to_file" json:"to_file"`
+
+	// Dir is the directory for log files.
+	Dir string `yaml:"dir" json:"dir"`
+
+	// MaxSizeMB is the maximum size of a log file in megabytes.
+	MaxSizeMB int `yaml:"max_size_mb" json:"max_size_mb"`
+
+	// MaxBackups is the maximum number of old log files to retain.
+	MaxBackups int `yaml:"max_backups" json:"max_backups"`
+
+	// MaxAgeDays is the maximum age of log files in days.
+	MaxAgeDays int `yaml:"max_age_days" json:"max_age_days"`
+
+	// Compress toggles compression of old log files.
+	Compress bool `yaml:"compress" json:"compress"`
+}
+
+// ProvidersConfig defines all provider configurations.
+type ProvidersConfig struct {
+	// LLMux contains LLMux OAuth provider configurations.
+	LLMux LLMuxConfig `yaml:"llmux" json:"llmux"`
+
+	// Ctonew contains ctonew provider configuration.
+	Ctonew CtonewConfig `yaml:"ctonew" json:"ctonew"`
+
+	// AIstudio contains AIstudio browser automation configuration.
+	AIstudio AIstudioConfig `yaml:"aistudio" json:"aistudio"`
+
+	// WebAI contains WebAI service configuration.
+	WebAI WebAIConfig `yaml:"webai" json:"webai"`
+}
+
+// LLMuxConfig defines LLMux OAuth provider configurations.
+type LLMuxConfig struct {
+	// ClaudePro contains Claude Pro OAuth configuration.
+	ClaudePro LLMuxProviderConfig `yaml:"claude_pro" json:"claude_pro"`
+
+	// ChatGPTPlus contains ChatGPT Plus OAuth configuration.
+	ChatGPTPlus LLMuxProviderConfig `yaml:"chatgpt_plus" json:"chatgpt_plus"`
+}
+
+// LLMuxProviderConfig defines configuration for a single LLMux provider.
+type LLMuxProviderConfig struct {
+	// Enabled toggles this provider.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// AutoStart loads this provider automatically on startup.
+	AutoStart bool `yaml:"auto_start" json:"auto_start"`
+
+	// OAuth contains OAuth configuration.
+	OAuth OAuthConfig `yaml:"oauth" json:"oauth"`
+
+	// Models lists models available through this provider.
+	Models []string `yaml:"models" json:"models"`
+}
+
+// OAuthConfig defines OAuth 2.0 configuration.
+type OAuthConfig struct {
+	// ClientID is the OAuth client ID (empty = use default).
+	ClientID string `yaml:"client_id" json:"client_id"`
+
+	// RedirectPort is the local callback server port (0 = random).
+	RedirectPort int `yaml:"redirect_port" json:"redirect_port"`
+
+	// Scopes are the OAuth scopes to request.
+	Scopes []string `yaml:"scopes" json:"scopes"`
+}
+
+// CtonewConfig defines ctonew provider configuration.
+type CtonewConfig struct {
+	// Enabled toggles this provider.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// AutoStart loads this provider automatically on startup.
+	AutoStart bool `yaml:"auto_start" json:"auto_start"`
+
+	// Clerk contains Clerk-specific configuration.
+	Clerk ClerkConfig `yaml:"clerk" json:"clerk"`
+
+	// Models lists models available through this provider.
+	Models []string `yaml:"models" json:"models"`
+}
+
+// ClerkConfig defines Clerk authentication configuration.
+type ClerkConfig struct {
+	// APIURL is the Clerk API base URL.
+	APIURL string `yaml:"api_url" json:"api_url"`
+}
+
+// AIstudioConfig defines AIstudio service configuration.
+type AIstudioConfig struct {
+	// Enabled toggles this provider.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// AutoStart starts the service automatically on router startup.
+	AutoStart bool `yaml:"auto_start" json:"auto_start"`
+
+	// Service contains service process configuration.
+	Service ServiceConfig `yaml:"service" json:"service"`
+
+	// HealthCheck contains health check configuration.
+	HealthCheck HealthCheckConfig `yaml:"health_check" json:"health_check"`
+
+	// Browser contains browser automation configuration.
+	Browser BrowserConfig `yaml:"browser" json:"browser"`
+
+	// Models lists models available through this provider.
+	Models []string `yaml:"models" json:"models"`
+}
+
+// WebAIConfig defines WebAI service configuration.
+type WebAIConfig struct {
+	// Enabled toggles this provider.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// AutoStart starts the service automatically on router startup.
+	AutoStart bool `yaml:"auto_start" json:"auto_start"`
+
+	// Service contains service process configuration.
+	Service ServiceConfig `yaml:"service" json:"service"`
+
+	// HealthCheck contains health check configuration.
+	HealthCheck HealthCheckConfig `yaml:"health_check" json:"health_check"`
+
+	// Proxy contains HTTP proxy configuration.
+	Proxy ProxyConfig `yaml:"proxy" json:"proxy"`
+
+	// Models lists models available through this provider.
+	Models []string `yaml:"models" json:"models"`
+}
+
+// ServiceConfig defines external service process configuration.
+type ServiceConfig struct {
+	// Command is the command to execute.
+	Command string `yaml:"command" json:"command"`
+
+	// Cwd is the working directory for the command.
+	Cwd string `yaml:"cwd" json:"cwd"`
+
+	// Port is the port the service listens on (for HTTP services).
+	Port int `yaml:"port" json:"port"`
+
+	// Env contains environment variables for the service.
+	Env map[string]string `yaml:"env" json:"env"`
+}
+
+// HealthCheckConfig defines health check configuration.
+type HealthCheckConfig struct {
+	// Enabled toggles health checking.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// URL is the health check endpoint (for HTTP services).
+	URL string `yaml:"url" json:"url"`
+
+	// Interval is the check interval in seconds.
+	Interval int `yaml:"interval" json:"interval"`
+
+	// Timeout is the check timeout in seconds.
+	Timeout int `yaml:"timeout" json:"timeout"`
+
+	// MaxFailures is the number of failures before restart.
+	MaxFailures int `yaml:"max_failures" json:"max_failures"`
+}
+
+// BrowserConfig defines browser automation configuration.
+type BrowserConfig struct {
+	// Type is the browser type: camoufox, playwright.
+	Type string `yaml:"type" json:"type"`
+
+	// Headless toggles headless mode.
+	Headless bool `yaml:"headless" json:"headless"`
+
+	// IdleTimeout is the browser idle timeout in seconds.
+	IdleTimeout int `yaml:"idle_timeout" json:"idle_timeout"`
+
+	// MaxInstances is the maximum concurrent browser instances.
+	MaxInstances int `yaml:"max_instances" json:"max_instances"`
+}
+
+// ProxyConfig defines HTTP proxy configuration.
+type ProxyConfig struct {
+	// Endpoint is the proxy endpoint URL.
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+
+	// Timeout is the proxy request timeout in seconds.
+	Timeout int `yaml:"timeout" json:"timeout"`
+
+	// Retry is the number of retry attempts.
+	Retry int `yaml:"retry" json:"retry"`
+}
+
+// ModelsConfig defines model routing and capabilities.
+type ModelsConfig struct {
+	// Routing defines model routing rules.
+	Routing []ModelRoutingRule `yaml:"routing" json:"routing"`
+
+	// Defaults defines default model capabilities.
+	Defaults ModelCapabilities `yaml:"defaults" json:"defaults"`
+
+	// Overrides defines per-model capability overrides.
+	Overrides map[string]ModelCapabilities `yaml:"overrides" json:"overrides"`
+}
+
+// ModelRoutingRule defines a single routing rule.
+type ModelRoutingRule struct {
+	// Pattern is the regex pattern to match model names.
+	Pattern string `yaml:"pattern" json:"pattern"`
+
+	// Providers lists providers to try in order.
+	Providers []string `yaml:"providers" json:"providers"`
+}
+
+// ModelCapabilities defines model capabilities.
+type ModelCapabilities struct {
+	// MaxTokens is the maximum token limit.
+	MaxTokens int `yaml:"max_tokens" json:"max_tokens"`
+
+	// SupportsStreaming indicates streaming support.
+	SupportsStreaming bool `yaml:"supports_streaming" json:"supports_streaming"`
+
+	// SupportsVision indicates vision/image support.
+	SupportsVision bool `yaml:"supports_vision" json:"supports_vision"`
+
+	// SupportsReasoning indicates reasoning/chain-of-thought support.
+	SupportsReasoning bool `yaml:"supports_reasoning" json:"supports_reasoning"`
+}
+
+// AdvancedConfig defines advanced configuration options.
+type AdvancedConfig struct {
+	// RequestLogging configures request/response logging.
+	RequestLogging RequestLoggingConfig `yaml:"request_logging" json:"request_logging"`
+
+	// RateLimiting configures rate limiting.
+	RateLimiting RateLimitingConfig `yaml:"rate_limiting" json:"rate_limiting"`
+
+	// Failover configures automatic failover.
+	Failover FailoverConfig `yaml:"failover" json:"failover"`
+
+	// ServiceManagement configures service lifecycle management.
+	ServiceManagement ServiceManagementConfig `yaml:"service_management" json:"service_management"`
+
+	// QuotaExceeded defines quota exceeded behavior (legacy compatibility).
+	QuotaExceeded QuotaExceeded `yaml:"quota_exceeded" json:"quota_exceeded"`
+}
+
+// RequestLoggingConfig defines request/response logging configuration.
+type RequestLoggingConfig struct {
+	// Enabled toggles request/response logging.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// SanitizeTokens removes tokens from logs.
+	SanitizeTokens bool `yaml:"sanitize_tokens" json:"sanitize_tokens"`
+}
+
+// RateLimitingConfig defines rate limiting configuration.
+type RateLimitingConfig struct {
+	// Enabled toggles rate limiting.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// RequestsPerMinute is the maximum requests per minute.
+	RequestsPerMinute int `yaml:"requests_per_minute" json:"requests_per_minute"`
+}
+
+// FailoverConfig defines failover configuration.
+type FailoverConfig struct {
+	// Enabled toggles automatic failover.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// MaxRetries is the maximum retry attempts per provider.
+	MaxRetries int `yaml:"max_retries" json:"max_retries"`
+
+	// RetryDelayMs is the delay between retries in milliseconds.
+	RetryDelayMs int `yaml:"retry_delay_ms" json:"retry_delay_ms"`
+}
+
+// ServiceManagementConfig defines service management configuration.
+type ServiceManagementConfig struct {
+	// AutoRestart toggles automatic service restart on failure.
+	AutoRestart bool `yaml:"auto_restart" json:"auto_restart"`
+
+	// RestartDelayS is the delay before restart in seconds.
+	RestartDelayS int `yaml:"restart_delay_s" json:"restart_delay_s"`
+
+	// MaxRestarts is the maximum restart attempts before giving up.
+	MaxRestarts int `yaml:"max_restarts" json:"max_restarts"`
 }
 
 // LoadConfig reads a YAML configuration file from the given path,

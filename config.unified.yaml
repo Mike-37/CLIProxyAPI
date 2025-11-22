@@ -1,0 +1,353 @@
+# ============================================
+# CLIProxyAPI Unified Configuration
+# ============================================
+# This is the new unified configuration for the optimized architecture
+# Copy this to config.yaml to use the new provider system
+
+# -----------------
+# Server Settings
+# -----------------
+server:
+  port: 8317
+  host: "0.0.0.0"
+  debug: false
+  read_timeout: 300   # seconds
+  write_timeout: 300  # seconds
+
+# -----------------
+# Management API
+# -----------------
+remote-management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: false
+
+# -----------------
+# Authentication
+# -----------------
+auth:
+  dir: "~/.cli-proxy-api"  # Directory for storing auth credentials
+  store: "file"             # Options: file, postgres, git, object (only file supported for now)
+
+# API keys for router authentication
+api-keys:
+  - "your-api-key-1"
+  - "your-api-key-2"
+
+# -----------------
+# WebSocket Relay
+# -----------------
+websocket:
+  enabled: true
+  path: "/v1/ws"
+  timeout: 300              # 5 minutes
+  ping_interval: 30         # Heartbeat every 30s
+  max_message_size: 10485760 # 10MB
+  auth: false               # Whether to require auth for WS
+
+# -----------------
+# Logging
+# -----------------
+logging:
+  level: "info"             # debug, info, warn, error
+  to_file: false           # Write to files instead of stdout
+  dir: "./logs"
+  max_size_mb: 100
+  max_backups: 5
+  max_age_days: 30
+  compress: true
+
+# -----------------
+# Advanced
+# -----------------
+proxy-url: ""               # Global proxy (socks5/http/https)
+request-retry: 3
+usage-statistics-enabled: false
+
+# ============================================
+# PROVIDERS CONFIGURATION
+# ============================================
+
+providers:
+  # --------------------------------------------------
+  # IN-PROCESS PROVIDERS (No external services)
+  # --------------------------------------------------
+
+  # LLMux - OAuth providers merged into router
+  llmux:
+    # Claude Pro OAuth
+    claude_pro:
+      enabled: true
+      auto_start: true       # Loaded automatically by router
+
+      # OAuth configuration
+      oauth:
+        client_id: ""        # Leave empty to use default
+        redirect_port: 0     # 0 = random port
+        scopes:
+          - "profile"
+          - "email"
+
+      # Models available through this provider
+      models:
+        - "claude-sonnet-4-5-20250929"
+        - "claude-opus-4-1-20250805"
+        - "claude-haiku-4-5-20251001"
+
+    # ChatGPT Plus OAuth
+    chatgpt_plus:
+      enabled: true
+      auto_start: true
+
+      # OAuth configuration
+      oauth:
+        client_id: ""        # Leave empty to use default
+        redirect_port: 0     # 0 = random port
+        scopes:
+          - "profile"
+          - "email"
+
+      # Models available through this provider
+      models:
+        - "gpt-5"
+        - "gpt-5-1"
+        - "gpt-5-codex"
+        - "o3-mini"
+
+  # ctonew - Clerk JWT authentication (ported from Deno)
+  ctonew:
+    enabled: true
+    auto_start: true         # Loaded automatically by router
+
+    # Clerk configuration
+    clerk:
+      api_url: "https://clerk.enginelabs.com"
+
+    # Models available through this provider
+    models:
+      - "ctonew-claude-sonnet"
+      - "ctonew-gpt-5"
+
+  # --------------------------------------------------
+  # EXISTING PROVIDERS (Kept for compatibility)
+  # --------------------------------------------------
+
+  # Direct Gemini API (existing)
+  gemini:
+    enabled: true
+    # Use gemini-api-key section below for configuration
+
+  # Direct Claude API (existing)
+  claude:
+    enabled: true
+    # Use claude-api-key section below for configuration
+
+  # Codex API (existing)
+  codex:
+    enabled: true
+    # Use codex-api-key section below for configuration
+
+  # --------------------------------------------------
+  # EXTERNAL SERVICE PROVIDERS
+  # --------------------------------------------------
+
+  # AIstudio - Browser automation via WebSocket
+  aistudio:
+    enabled: true
+    auto_start: true
+
+    # Service process configuration
+    service:
+      command: "python providers/aistudio/main.py"
+      cwd: "providers/aistudio"
+      env:
+        ROUTER_WS_URL: "ws://localhost:8317/v1/ws"
+        PROVIDER_NAME: "aistudio"
+        CONFIG_PATH: "config.yaml"
+
+    # Health check configuration
+    health_check:
+      enabled: true
+      interval: 30           # Check every 30 seconds
+      timeout: 10            # Timeout after 10 seconds
+      max_failures: 3        # Restart after 3 failures
+
+    # Browser configuration
+    browser:
+      type: "camoufox"       # Options: camoufox, playwright
+      headless: false        # Set to true for headless mode (may break auth)
+      idle_timeout: 1800     # 30 minutes - browser timeout when idle
+      max_instances: 3       # Maximum concurrent browser instances
+
+    # Models available through this provider
+    models:
+      - "gemini-2-flash-experimental-aistudio"
+      - "gemini-1.5-pro-aistudio"
+      - "gemini-1.5-flash-aistudio"
+      - "gemini-exp-1206-aistudio"
+
+  # WebAI - HTTP service with gpt4free fallback (OPTIONAL)
+  webai:
+    enabled: false           # Disabled by default
+    auto_start: false
+
+    # Service process configuration
+    service:
+      command: "python providers/webai/main.py"
+      cwd: "providers/webai"
+      port: 8406
+      env:
+        ROUTER_URL: "http://localhost:8317"
+        PROVIDER_NAME: "webai"
+
+    # Health check configuration
+    health_check:
+      enabled: true
+      url: "http://localhost:8406/health"
+      interval: 30
+      timeout: 5
+      max_failures: 3
+
+    # HTTP proxy configuration
+    proxy:
+      endpoint: "http://localhost:8406"
+      timeout: 60
+      retry: 3
+
+    # Models available through this provider
+    models:
+      - "gemini-webai"
+      - "claude-webai"
+      - "gpt-webai"
+
+# ============================================
+# EXISTING API KEYS (Legacy compatibility)
+# ============================================
+
+# Gemini API keys (preferred)
+#gemini-api-key:
+#  - api-key: "AIzaSy...01"
+#    base-url: "https://generativelanguage.googleapis.com"
+#    headers:
+#      X-Custom-Header: "custom-value"
+#    proxy-url: "socks5://proxy.example.com:1080"
+#  - api-key: "AIzaSy...02"
+
+# Codex API keys
+#codex-api-key:
+#  - api-key: "sk-atSM..."
+#    base-url: "https://api.openai.com"
+#    headers:
+#      X-Custom-Header: "custom-value"
+#    proxy-url: "socks5://proxy.example.com:1080"
+
+# Claude API keys
+#claude-api-key:
+#  - api-key: "sk-ant..."
+#    base-url: "https://api.anthropic.com"
+#    headers:
+#      X-Custom-Header: "custom-value"
+#    proxy-url: "socks5://proxy.example.com:1080"
+
+# ============================================
+# MODEL REGISTRY & ROUTING
+# ============================================
+
+models:
+  # Model routing rules (first match wins)
+  # Format: regex pattern → list of providers in priority order
+  routing:
+    # Claude models
+    - pattern: "^claude-sonnet-4-5"
+      providers:
+        - "llmux-claude"      # Try LLMux Claude Pro first
+        - "claude-oauth"      # Fallback to direct Claude OAuth (if configured)
+        - "ctonew"            # Last resort via ctonew
+
+    - pattern: "^claude-opus-4"
+      providers:
+        - "llmux-claude"
+        - "claude-oauth"
+
+    - pattern: "^claude-haiku-4-5"
+      providers:
+        - "llmux-claude"
+        - "claude-oauth"
+
+    # GPT models
+    - pattern: "^gpt-5"
+      providers:
+        - "llmux-chatgpt"     # Try LLMux ChatGPT Plus first
+        - "ctonew"            # Fallback to ctonew
+
+    - pattern: "^o3-mini"
+      providers:
+        - "llmux-chatgpt"
+
+    # ctonew-specific models
+    - pattern: "^ctonew-"
+      providers:
+        - "ctonew"
+
+    # AIstudio models
+    - pattern: "gemini-.*-aistudio$"
+      providers:
+        - "aistudio"
+
+    # WebAI models (only if enabled)
+    - pattern: ".*-webai$"
+      providers:
+        - "webai"
+
+  # Default model capabilities
+  defaults:
+    max_tokens: 200000
+    supports_streaming: true
+    supports_vision: false
+    supports_reasoning: false
+
+  # Per-model overrides
+  overrides:
+    "gpt-5":
+      max_tokens: 128000
+      supports_reasoning: true
+
+    "claude-opus-4-1-20250805":
+      max_tokens: 200000
+      supports_vision: true
+
+    "gemini-2-flash-experimental-aistudio":
+      max_tokens: 1000000
+      supports_vision: true
+
+# ============================================
+# ADVANCED SETTINGS
+# ============================================
+
+advanced:
+  # Request/response logging
+  request_logging:
+    enabled: false           # Log incoming requests
+    sanitize_tokens: true    # Remove tokens from logs
+
+  # Rate limiting (per provider)
+  rate_limiting:
+    enabled: false
+    requests_per_minute: 60
+
+  # Failover configuration
+  failover:
+    enabled: true
+    max_retries: 2           # Try each provider up to 2 times
+    retry_delay_ms: 1000     # Wait 1 second between retries
+
+  # Service management
+  service_management:
+    auto_restart: true       # Auto-restart failed services
+    restart_delay_s: 5       # Wait 5 seconds before restart
+    max_restarts: 3          # Max restarts before giving up
+
+  # Quota exceeded behavior (legacy)
+  quota_exceeded:
+    switch_project: true
+    switch_preview_model: true
