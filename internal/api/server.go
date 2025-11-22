@@ -340,9 +340,15 @@ func (s *Server) setupRoutes() {
 				"POST /v1/chat/completions",
 				"POST /v1/completions",
 				"GET /v1/models",
+				"GET /v1/health",
 			},
 		})
 	})
+
+	// Health check endpoints (no auth required)
+	s.engine.GET("/v1/health", managementHandlers.HealthHandler)
+	s.engine.GET("/v1/health/deep", managementHandlers.DeepHealthHandler)
+
 	s.engine.POST("/v1internal:method", geminiCLIHandlers.CLIHandler)
 
 	// OAuth callback endpoints (reuse main server port)
