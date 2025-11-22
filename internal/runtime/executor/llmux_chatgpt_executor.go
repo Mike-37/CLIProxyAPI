@@ -1,19 +1,24 @@
 package executor
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/auth/llmux"
-	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v6/sdk/translator"
+	log "github.com/sirupsen/logrus"
 )
 
-// LLMuxChatGPTExecutor implements the Executor interface for LLMux ChatGPT Plus
+// LLMuxChatGPTExecutor implements the Executor interface for LLMux ChatGPT Plus OAuth
 type LLMuxChatGPTExecutor struct {
 	oauthHandler *llmux.ChatGPTPlusOAuth
 	tokenStorage *llmux.TokenStorage
-	userEmail    string
 	httpClient   *http.Client
 }
 
@@ -21,58 +26,100 @@ type LLMuxChatGPTExecutor struct {
 func NewLLMuxChatGPTExecutor(
 	oauthHandler *llmux.ChatGPTPlusOAuth,
 	tokenStorage *llmux.TokenStorage,
-	userEmail string,
-	httpClient *http.Client,
 ) *LLMuxChatGPTExecutor {
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	}
 	return &LLMuxChatGPTExecutor{
 		oauthHandler: oauthHandler,
 		tokenStorage: tokenStorage,
-		userEmail:    userEmail,
-		httpClient:   httpClient,
+		httpClient:   &http.Client{Timeout: 0},
 	}
 }
 
-// Name returns the executor name
-func (e *LLMuxChatGPTExecutor) Name() string {
+// Identifier returns the executor identifier
+func (e *LLMuxChatGPTExecutor) Identifier() string {
 	return "llmux-chatgpt"
 }
 
-// Execute executes a request using LLMux ChatGPT Plus
-func (e *LLMuxChatGPTExecutor) Execute(ctx context.Context, request *executor.ExecuteRequest) (*executor.ExecuteResponse, error) {
-	// Get or refresh token
-	token, err := e.getValidToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get valid token: %w", err)
-	}
-
-	// Call OpenAI API with token
-	return e.callOpenAIAPI(ctx, token, request)
+// PrepareRequest prepares the HTTP request (no-op for this executor)
+func (e *LLMuxChatGPTExecutor) PrepareRequest(_ *http.Request, _ *cliproxyauth.Auth) error {
+	return nil
 }
 
-// Stream executes a streaming request using LLMux ChatGPT Plus
-func (e *LLMuxChatGPTExecutor) Stream(ctx context.Context, request *executor.ExecuteRequest) (<-chan executor.StreamChunk, error) {
-	// Get or refresh token
-	token, err := e.getValidToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get valid token: %w", err)
+// Execute executes a non-streaming request using LLMux ChatGPT Plus
+func (e *LLMuxChatGPTExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+	// Extract user email from auth context
+	userEmail := extractUserEmail(auth)
+	if userEmail == "" {
+		return resp, fmt.Errorf("no user email found in auth context")
 	}
 
-	// Call OpenAI API with streaming
-	return e.streamOpenAIAPI(ctx, token, request)
+	// Get or refresh token
+	token, err := e.getValidToken(ctx, userEmail)
+	if err != nil {
+		return resp, fmt.Errorf("failed to get valid token: %w", err)
+	}
+
+	// Transform request to OpenAI API format
+	openaiReq, err := e.transformRequestToOpenAI(req, opts)
+	if err != nil {
+		return resp, fmt.Errorf("failed to transform request: %w", err)
+	}
+
+	// Make HTTP request to OpenAI API
+	httpResp, err := e.callOpenAIAPI(ctx, token, openaiReq)
+	if err != nil {
+		return resp, err
+	}
+
+	// Transform response back to executor format
+	resp.Payload = httpResp
+	return resp, nil
 }
 
-// GetValidToken retrieves a valid access token, refreshing if necessary
-func (e *LLMuxChatGPTExecutor) getValidToken(ctx context.Context) (*llmux.ChatGPTPlusToken, error) {
+// ExecuteStream executes a streaming request using LLMux ChatGPT Plus
+func (e *LLMuxChatGPTExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (<-chan cliproxyexecutor.StreamChunk, error) {
+	// Extract user email from auth context
+	userEmail := extractUserEmail(auth)
+	if userEmail == "" {
+		ch := make(chan cliproxyexecutor.StreamChunk, 1)
+		ch <- cliproxyexecutor.StreamChunk{Err: fmt.Errorf("no user email found in auth context")}
+		close(ch)
+		return ch, nil
+	}
+
+	// Get or refresh token
+	token, err := e.getValidToken(ctx, userEmail)
+	if err != nil {
+		ch := make(chan cliproxyexecutor.StreamChunk, 1)
+		ch <- cliproxyexecutor.StreamChunk{Err: fmt.Errorf("failed to get valid token: %w", err)}
+		close(ch)
+		return ch, nil
+	}
+
+	// Transform request to OpenAI API format (with streaming enabled)
+	openaiReq, err := e.transformRequestToOpenAI(req, opts)
+	if err != nil {
+		ch := make(chan cliproxyexecutor.StreamChunk, 1)
+		ch <- cliproxyexecutor.StreamChunk{Err: fmt.Errorf("failed to transform request: %w", err)}
+		close(ch)
+		return ch, nil
+	}
+
+	// Make streaming HTTP request to OpenAI API
+	return e.streamOpenAIAPI(ctx, token, openaiReq), nil
+}
+
+// getValidToken retrieves a valid access token, refreshing if necessary
+func (e *LLMuxChatGPTExecutor) getValidToken(ctx context.Context, userEmail string) (*llmux.ChatGPTPlusToken, error) {
 	// Try to get stored token
-	tokenInterface, err := e.tokenStorage.GetToken("openai", e.userEmail)
+	tokenInterface, err := e.tokenStorage.GetToken("openai", userEmail)
 	if err != nil {
 		return nil, fmt.Errorf("no stored token for user: %w", err)
 	}
 
-	token := tokenInterface.(*llmux.ChatGPTPlusToken)
+	token, ok := tokenInterface.(*llmux.ChatGPTPlusToken)
+	if !ok {
+		return nil, fmt.Errorf("invalid token type")
+	}
 
 	// Check if token is expired
 	if token.IsExpired() {
@@ -84,9 +131,8 @@ func (e *LLMuxChatGPTExecutor) getValidToken(ctx context.Context) (*llmux.ChatGP
 			}
 
 			// Save refreshed token
-			if err := e.tokenStorage.SaveToken("openai", e.userEmail, newToken); err != nil {
-				// Log warning but continue with new token
-				fmt.Printf("warning: failed to save refreshed token: %v\n", err)
+			if err := e.tokenStorage.SaveToken("openai", userEmail, newToken); err != nil {
+				log.Warnf("failed to save refreshed token: %v", err)
 			}
 
 			return newToken, nil
@@ -98,26 +144,110 @@ func (e *LLMuxChatGPTExecutor) getValidToken(ctx context.Context) (*llmux.ChatGP
 	return token, nil
 }
 
-// callOpenAIAPI makes a request to the OpenAI API
-func (e *LLMuxChatGPTExecutor) callOpenAIAPI(ctx context.Context, token *llmux.ChatGPTPlusToken, request *executor.ExecuteRequest) (*executor.ExecuteResponse, error) {
-	// TODO: Implement OpenAI API call
-	// This would typically:
-	// 1. Transform request format to OpenAI API format
-	// 2. Add Bearer token to Authorization header
-	// 3. Make HTTP request to OpenAI API
-	// 4. Transform response back to executor format
+// transformRequestToOpenAI transforms an executor request to OpenAI API format
+func (e *LLMuxChatGPTExecutor) transformRequestToOpenAI(req cliproxyexecutor.Request, opts cliproxyexecutor.Options) ([]byte, error) {
+	// Transform from source format to OpenAI format
+	from := opts.SourceFormat
+	to := sdktranslator.FromString("openai")
+	stream := opts.Stream
 
-	return nil, fmt.Errorf("not yet implemented")
+	// Use streaming translation to preserve function calling
+	body := sdktranslator.TranslateRequest(from, to, req.Model, bytes.Clone(req.Payload), stream)
+	return body, nil
 }
 
-// streamOpenAIAPI makes a streaming request to the OpenAI API
-func (e *LLMuxChatGPTExecutor) streamOpenAIAPI(ctx context.Context, token *llmux.ChatGPTPlusToken, request *executor.ExecuteRequest) (<-chan executor.StreamChunk, error) {
-	// TODO: Implement OpenAI API streaming
-	// This would typically:
-	// 1. Transform request format to OpenAI API format
-	// 2. Add Bearer token to Authorization header
-	// 3. Make streaming HTTP request to OpenAI API
-	// 4. Transform streaming response chunks to executor format
+// callOpenAIAPI makes an HTTP request to the OpenAI API
+func (e *LLMuxChatGPTExecutor) callOpenAIAPI(ctx context.Context, token *llmux.ChatGPTPlusToken, body []byte) ([]byte, error) {
+	url := "https://api.openai.com/v1/chat/completions"
 
-	return nil, fmt.Errorf("not yet implemented")
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	// Add authorization header
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Make request
+	httpResp, err := e.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for HTTP errors
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		return nil, &statusErr{code: httpResp.StatusCode, msg: string(respBody)}
+	}
+
+	return respBody, nil
+}
+
+// streamOpenAIAPI makes a streaming HTTP request to the OpenAI API
+func (e *LLMuxChatGPTExecutor) streamOpenAIAPI(ctx context.Context, token *llmux.ChatGPTPlusToken, body []byte) <-chan cliproxyexecutor.StreamChunk {
+	ch := make(chan cliproxyexecutor.StreamChunk, 10)
+
+	go func() {
+		defer close(ch)
+
+		url := "https://api.openai.com/v1/chat/completions"
+
+		// Create HTTP request
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			ch <- cliproxyexecutor.StreamChunk{Err: err}
+			return
+		}
+
+		// Add authorization header
+		httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		// Make request
+		httpResp, err := e.httpClient.Do(httpReq)
+		if err != nil {
+			ch <- cliproxyexecutor.StreamChunk{Err: err}
+			return
+		}
+		defer httpResp.Body.Close()
+
+		// Check for HTTP errors
+		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+			body, _ := io.ReadAll(httpResp.Body)
+			ch <- cliproxyexecutor.StreamChunk{Err: &statusErr{code: httpResp.StatusCode, msg: string(body)}}
+			return
+		}
+
+		// Stream lines from response
+		scanner := bufio.NewScanner(httpResp.Body)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
+
+			// Parse SSE format: "data: {...}"
+			if bytes.HasPrefix(line, []byte("data: ")) {
+				chunk := bytes.TrimPrefix(line, []byte("data: "))
+				// Skip [DONE] marker
+				if string(chunk) != "[DONE]" {
+					ch <- cliproxyexecutor.StreamChunk{Payload: chunk}
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			ch <- cliproxyexecutor.StreamChunk{Err: err}
+		}
+	}()
+
+	return ch
 }
